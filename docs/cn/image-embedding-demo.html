@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draw.io 图片嵌入示例</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .example {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-left: 4px solid #2196F3;
+        }
+        .code {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .dialogue {
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .user {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+        .ai {
+            background: #f1f8e9;
+            border-left: 4px solid #4CAF50;
+        }
+        .label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .tip {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖼️ Draw.io 图片嵌入功能演示</h1>
+        
+        <div class="tip">
+            <strong>💡 重要提示：</strong> 此功能已添加到 AI 系统提示中。当你请求嵌入复杂图表时，AI 会自动使用此功能。
+        </div>
+
+        <h2>📋 使用场景</h2>
+        <p>适合嵌入真实图片的场景：</p>
+        <ul>
+            <li>科研论文中的热力图、相关性矩阵</li>
+            <li>显微镜图像、细胞结构图</li>
+            <li>芯片架构图、电路设计图</li>
+            <li>统计分析图表（散点图、箱线图等）</li>
+            <li>任何难以用基本形状重现的复杂视觉元素</li>
+        </ul>
+
+        <h2>🎯 示例 1: 嵌入科研热力图</h2>
+        <div class="example">
+            <h3>对话示例</h3>
+            
+            <div class="dialogue user">
+                <div class="label">👤 用户:</div>
+                我需要创建一个基因表达分析的图表，包含一个展示100个基因相关性的热力图。
+            </div>
+
+            <div class="dialogue ai">
+                <div class="label">🤖 AI:</div>
+                好的，我可以帮你创建这个图表。为了准确展示基因相关性，我建议直接嵌入真实的热力图图片。<br><br>
+                请提供：
+                <ol>
+                    <li>热力图的图片 URL，或</li>
+                    <li>点击聊天框下方的📎按钮上传热力图文件</li>
+                </ol>
+                我会将其嵌入到图表中，并添加标题和说明。
+            </div>
+
+            <div class="dialogue user">
+                <div class="label">👤 用户:</div>
+                这是热力图链接：https://i.imgur.com/example-heatmap.png
+            </div>
+
+            <div class="dialogue ai">
+                <div class="label">🤖 AI:</div>
+                [AI 会生成包含以下元素的图表]
+            </div>
+
+            <h3>生成的 XML 代码片段：</h3>
+            <div class="code">
+&lt;!-- 图表标题 --&gt;
+&lt;mxCell id="title1" value="基因表达相关性分析" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=24;fontStyle=1" vertex="1" parent="1"&gt;
+  &lt;mxGeometry x="200" y="40" width="400" height="40" as="geometry"/&gt;
+&lt;/mxCell&gt;
+
+&lt;!-- 嵌入的热力图 --&gt;
+&lt;mxCell id="heatmap1" value="基因相关性热力图" 
+  style="shape=image;
+         verticalLabelPosition=bottom;
+         labelBackgroundColor=default;
+         verticalAlign=top;
+         aspect=fixed;
+         imageAspect=0;
+         image=https://i.imgur.com/example-heatmap.png;" 
+  vertex="1" parent="1"&gt;
+  &lt;mxGeometry x="150" y="120" width="500" height="400" as="geometry"/&gt;
+&lt;/mxCell&gt;
+
+&lt;!-- 说明文本 --&gt;
+&lt;mxCell id="desc1" value="图例：红色表示正相关，蓝色表示负相关" 
+  style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=12" 
+  vertex="1" parent="1"&gt;
+  &lt;mxGeometry x="150" y="540" width="500" height="30" as="geometry"/&gt;
+&lt;/mxCell&gt;
+            </div>
+        </div>
+
+        <h2>🎯 示例 2: 芯片架构标注图</h2>
+        <div class="example">
+            <h3>对话示例</h3>
+            
+            <div class="dialogue user">
+                <div class="label">👤 用户:</div>
+                帮我创建一个芯片架构说明图。我已经有了芯片的显微照片（已上传chip.jpg），
+                需要用箭头标注出：CPU核心区、内存控制器、L3缓存、I/O接口。
+            </div>
+
+            <div class="dialogue ai">
+                <div class="label">🤖 AI:</div>
+                [AI 会分析上传的芯片图片，创建包含以下元素的图表：]
+                <ul>
+                    <li>嵌入的芯片照片</li>
+                    <li>指向各个组件的箭头</li>
+                    <li>文本框标注各部分名称</li>
+                    <li>整体架构说明</li>
+                </ul>
+            </div>
+
+            <h3>图表会包含的关键元素：</h3>
+            <div class="code">
+&lt;!-- 嵌入的芯片照片 --&gt;
+&lt;mxCell id="chip1" value="" 
+  style="shape=image;aspect=fixed;imageAspect=0;image=data:image/jpeg;base64,..." 
+  vertex="1" parent="1"&gt;
+  &lt;mxGeometry x="100" y="100" width="600" height="400" as="geometry"/&gt;
+&lt;/mxCell&gt;
+
+&lt;!-- CPU核心标注箭头 --&gt;
+&lt;mxCell id="arrow1" value="" 
+  style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#FF0000;" 
+  edge="1" parent="1"&gt;
+  &lt;mxGeometry relative="1" as="geometry"&gt;
+    &lt;mxPoint x="300" y="250" as="sourcePoint"/&gt;
+    &lt;mxPoint x="250" y="200" as="targetPoint"/&gt;
+  &lt;/mxGeometry&gt;
+&lt;/mxCell&gt;
+
+&lt;!-- CPU核心文本说明 --&gt;
+&lt;mxCell id="label1" value="CPU核心区\n(4个核心)" 
+  style="text;html=1;strokeColor=none;fillColor=#ffffff;align=center;verticalAlign=middle;fontSize=12;fontStyle=1" 
+  vertex="1" parent="1"&gt;
+  &lt;mxGeometry x="250" y="150" width="100" height="40" as="geometry"/&gt;
+&lt;/mxCell&gt;
+            </div>
+        </div>
+
+        <h2>🎯 示例 3: 多图表组合</h2>
+        <div class="example">
+            <h3>对话示例</h3>
+            
+            <div class="dialogue user">
+                <div class="label">👤 用户:</div>
+                创建一个数据分析结果总览图，包含：
+                <ul>
+                    <li>左侧：相关性热力图（https://example.com/heatmap.png）</li>
+                    <li>右侧：PCA散点图（https://example.com/pca.png）</li>
+                    <li>中间用箭头连接，标注"特征提取"</li>
+                    <li>顶部添加标题"多组学数据分析流程"</li>
+                </ul>
+            </div>
+
+            <div class="dialogue ai">
+                <div class="label">🤖 AI:</div>
+                [AI 会创建布局合理的组合图表，包含两张嵌入的图片及连接说明]
+            </div>
+        </div>
+
+        <h2>📝 关键属性说明</h2>
+        <div class="code">
+style="shape=image;          <span style="color: #98c379;">/* 指定这是图片元素 */</span>
+       verticalLabelPosition=bottom;  <span style="color: #98c379;">/* 标签显示在底部 */</span>
+       labelBackgroundColor=default;   <span style="color: #98c379;">/* 标签背景色 */</span>
+       verticalAlign=top;              <span style="color: #98c379;">/* 图片顶部对齐 */</span>
+       aspect=fixed;                   <span style="color: #98c379;">/* 保持宽高比 */</span>
+       imageAspect=0;                  <span style="color: #98c379;">/* 禁用自动比例调整 */</span>
+       image=URL_OR_BASE64;"           <span style="color: #98c379;">/* 图片源 */</span>
+        </div>
+
+        <h2>💡 使用技巧</h2>
+        <ul>
+            <li><strong>URL 方式：</strong>适合在线可访问的图片，文件体积小</li>
+            <li><strong>Base64 方式：</strong>图片嵌入文件中，离线可用但文件较大</li>
+            <li><strong>尺寸建议：</strong>保持图片在 100-1000 像素范围内</li>
+            <li><strong>组合使用：</strong>可以在嵌入的图片周围添加箭头、文本框等标注</li>
+        </ul>
+
+        <h2>🚀 开始使用</h2>
+        <ol>
+            <li>确保你的 Next AI Draw.io 应用正在运行</li>
+            <li>在聊天中描述你需要的图表，提到需要嵌入的复杂元素</li>
+            <li>提供图片 URL 或上传图片文件</li>
+            <li>AI 会自动生成包含嵌入图片的图表</li>
+            <li>可以继续对话，让 AI 添加标注、调整布局等</li>
+        </ol>
+
+        <div class="tip">
+            <strong>🎉 功能已启用！</strong><br>
+            系统提示已更新，AI 现在知道如何嵌入图片了。只需在对话中提出需求即可。
+        </div>
+    </div>
+</body>
+</html>

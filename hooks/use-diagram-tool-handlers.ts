@@ -82,7 +82,128 @@ export function useDiagramToolHandlers({
         toolCall: ToolCall,
         addToolOutput: AddToolOutputFn,
     ) => {
-        const { xml } = toolCall.input as { xml: string }
+        let { xml } = toolCall.input as { xml: string }
+
+        // OPTIMIZATION: Replace cache URLs with actual base64 data
+        // Pattern: image=data:cache/CACHE_KEY/REGION_NAME
+        const cachePattern = /image=data:cache\/([^/]+)\/([^;"\s]+)/g
+        const cacheMatches = [...xml.matchAll(cachePattern)]
+
+        if (cacheMatches.length > 0) {
+            console.log(
+                `[display_diagram] Found ${cacheMatches.length} cached image references:`,
+                cacheMatches.map((m) => `${m[1]}/${m[2]}`),
+            )
+
+            // Group by cache key
+            const cacheKeys = new Set(cacheMatches.map((m) => m[1]))
+
+            for (const cacheKey of cacheKeys) {
+                try {
+                    console.log(`[display_diagram] Fetching cache: ${cacheKey}`)
+                    const response = await fetch("/api/get-cached-regions", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ cacheKey }),
+                    })
+
+                    if (response.ok) {
+                        const { regions } = await response.json()
+                        console.log(
+                            `[display_diagram] Retrieved ${Object.keys(regions).length} regions from cache:`,
+                            Object.keys(regions),
+                        )
+
+                        // Replace all cache URLs with actual data URLs
+                        let replacementCount = 0
+                        for (const [
+                            fullMatch,
+                            key,
+                            regionName,
+                        ] of cacheMatches) {
+                            if (key === cacheKey && regions[regionName]) {
+                                let dataUrl = regions[regionName]
+                                const beforeLength = xml.length
+
+                                // CRITICAL FIX: draw.io style attribute parser treats semicolons as separators
+                                // We need to URL-encode the semicolons in the data URL to prevent parsing issues
+                                // Replace ; with %3B in the data URL
+                                dataUrl = dataUrl.replace(/;/g, "%3B")
+
+                                // Log the replacement for debugging
+                                const searchStr = `image=data:cache/${cacheKey}/${regionName}`
+                                console.log(
+                                    `[display_diagram] Searching for: ${searchStr}`,
+                                )
+                                console.log(
+                                    `[display_diagram] Found in XML: ${xml.includes(searchStr)}`,
+                                )
+                                console.log(
+                                    `[display_diagram] Data URL has semicolons replaced with %3B`,
+                                )
+
+                                // Replace with URL-encoded data URL
+                                xml = xml.replace(searchStr, `image=${dataUrl}`)
+
+                                const afterLength = xml.length
+                                console.log(
+                                    `[display_diagram] Replaced ${regionName}: XML grew by ${afterLength - beforeLength} bytes`,
+                                )
+
+                                // Verify replacement worked
+                                if (!xml.includes(searchStr)) {
+                                    console.log(
+                                        `[display_diagram] ✅ Cache URL removed, data URL injected`,
+                                    )
+                                } else {
+                                    console.log(
+                                        `[display_diagram] ⚠️ Cache URL still present!`,
+                                    )
+                                }
+
+                                replacementCount++
+                            }
+                        }
+
+                        console.log(
+                            `[display_diagram] Successfully replaced ${replacementCount} cached images for key: ${cacheKey}`,
+                        )
+                    } else {
+                        const errorText = await response.text()
+                        console.error(
+                            `[display_diagram] Failed to fetch cache: ${cacheKey}, Status: ${response.status}, Error: ${errorText}`,
+                        )
+                    }
+                } catch (error) {
+                    console.error(
+                        `[display_diagram] Error fetching cached regions:`,
+                        error,
+                    )
+                }
+            }
+        }
+
+        // DEBUG: Log a sample of the final XML after cache replacement
+        if (cacheMatches.length > 0) {
+            const sampleLength = 1000
+            const xmlSample = xml.substring(0, sampleLength)
+            console.log(
+                `[display_diagram] Final XML sample (first ${sampleLength} chars):`,
+                xmlSample,
+            )
+
+            // Check if base64 data is properly embedded
+            const hasCompleteDataUrl = xml.includes("data:image/png;base64,")
+            const hasIncompleteDataUrl =
+                xml.includes("image=data:image/png;") &&
+                !xml.includes("image=data:image/png;base64,")
+            console.log(
+                `[display_diagram] Has complete data URLs: ${hasCompleteDataUrl}`,
+            )
+            console.log(
+                `[display_diagram] Has incomplete data URLs (missing base64): ${hasIncompleteDataUrl}`,
+            )
+        }
 
         // DEBUG: Log raw input to diagnose false truncation detection
         if (DEBUG) {

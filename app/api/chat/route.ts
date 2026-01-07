@@ -39,6 +39,11 @@ import { getUserIdFromRequest } from "@/lib/user-id"
 
 export const maxDuration = 120
 
+// Declare global cache for extracted image regions
+declare global {
+    var extractedRegionsCache: Map<string, Record<string, string>> | undefined
+}
+
 // Helper function to create cached stream response
 function createCachedStreamResponse(xml: string): Response {
     const toolCallId = `cached-${Date.now()}`
@@ -282,6 +287,45 @@ ${userInputText}
             msg.content && Array.isArray(msg.content) && msg.content.length > 0,
     )
 
+    // OPTIMIZATION: Remove image attachments from historical messages to prevent token explosion
+    // Only the LAST user message should contain images for context
+    enhancedMessages = enhancedMessages
+        .map((msg: any, idx: number) => {
+            // Skip processing for non-user messages or the last message
+            if (msg.role !== "user" || idx === enhancedMessages.length - 1) {
+                return msg
+            }
+
+            // Remove image parts from historical user messages
+            if (Array.isArray(msg.content)) {
+                const filteredContent = msg.content.filter(
+                    (part: any) => part.type !== "image",
+                )
+                if (filteredContent.length < msg.content.length) {
+                    console.log(
+                        `[route.ts] Removed ${msg.content.length - filteredContent.length} image(s) from historical message ${idx} to save tokens`,
+                    )
+                }
+
+                // If message becomes empty after removing images, add a placeholder text
+                // to prevent "text content blocks must be non-empty" API error
+                if (filteredContent.length === 0) {
+                    console.log(
+                        `[route.ts] Message ${idx} had only images - adding placeholder text`,
+                    )
+                    return {
+                        ...msg,
+                        content: [{ type: "text", text: "[Image uploaded]" }],
+                    }
+                }
+
+                return { ...msg, content: filteredContent }
+            }
+
+            return msg
+        })
+        .filter((msg: any) => msg.content && msg.content.length > 0)
+
     // Filter out tool-calls with invalid inputs (from failed repair or interrupted streaming)
     // Bedrock API rejects messages where toolUse.input is not a valid JSON object
     enhancedMessages = enhancedMessages
@@ -309,6 +353,42 @@ ${userInputText}
             return { ...msg, content: filteredContent }
         })
         .filter((msg: any) => msg.content && msg.content.length > 0)
+
+    // OPTIMIZATION: Truncate base64 data URLs in tool-result content to prevent token explosion
+    // Only keep first 100 chars of data URLs for context, full data only needed once
+    enhancedMessages = enhancedMessages.map((msg: any) => {
+        if (msg.role !== "tool" || !Array.isArray(msg.content)) {
+            return msg
+        }
+
+        const processedContent = msg.content.map((part: any) => {
+            if (
+                part.type === "tool-result" &&
+                typeof part.result === "string"
+            ) {
+                // Truncate base64 data URLs in the result text
+                // Pattern: data:image/[type];base64,[very long base64 string]
+                const truncatedResult = part.result.replace(
+                    /data:image\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/g,
+                    (match: string) => {
+                        const prefix = match.substring(0, 50)
+                        return `${prefix}...[base64 truncated to save tokens]...`
+                    },
+                )
+
+                if (truncatedResult !== part.result) {
+                    console.log(
+                        `[route.ts] Truncated base64 data in tool-result to save ~${Math.floor((part.result.length - truncatedResult.length) / 1000)}K tokens`,
+                    )
+                }
+
+                return { ...part, result: truncatedResult }
+            }
+            return part
+        })
+
+        return { ...msg, content: processedContent }
+    })
 
     // DEBUG: Log modelMessages structure (what's being sent to AI)
     console.log("[route.ts] Model messages count:", enhancedMessages.length)
@@ -672,6 +752,228 @@ Call this tool to get shape names and usage syntax for a specific library.`,
                             error,
                         )
                         return `Error loading library "${library}". Please try again.`
+                    }
+                },
+            },
+            extract_image_regions: {
+                description: `Automatically extract/crop specific regions from an uploaded image for embedding in diagrams.
+                
+Use this when user uploads a complex image containing elements that cannot be drawn with basic shapes (photos of people, heatmaps, circuit boards, microscopy images, etc.).
+
+The tool will:
+1. Take the full uploaded image URL
+2. Extract specified rectangular regions
+3. Return base64 data URLs for each region
+4. You can then embed these in the diagram using image elements
+
+Example use case: User uploads scientific diagram with hand photo and heatmap. You identify these complex regions, call this tool to extract them, then embed the extracted images in your diagram.`,
+                inputSchema: z.object({
+                    imageUrl: z
+                        .string()
+                        .describe(
+                            "The uploaded image URL (data: URL or http: URL from message attachments)",
+                        ),
+                    regions: z
+                        .array(
+                            z.object({
+                                name: z
+                                    .string()
+                                    .describe(
+                                        "Region identifier (e.g., 'hand', 'heatmap', 'circuit')",
+                                    ),
+                                x: z
+                                    .number()
+                                    .describe("X coordinate in pixels"),
+                                y: z
+                                    .number()
+                                    .describe("Y coordinate in pixels"),
+                                width: z.number().describe("Width in pixels"),
+                                height: z.number().describe("Height in pixels"),
+                                description: z
+                                    .string()
+                                    .describe(
+                                        "What this region contains (for logging)",
+                                    ),
+                            }),
+                        )
+                        .describe("Array of regions to extract"),
+                }),
+                execute: async ({ imageUrl, regions }) => {
+                    try {
+                        // Auto-inject uploaded image URL if AI used placeholder
+                        let actualImageUrl = imageUrl
+
+                        // If AI used placeholder, extract actual data URL from message attachments
+                        if (
+                            imageUrl === "{{UPLOADED_IMAGE}}" ||
+                            imageUrl.includes("{{UPLOADED_IMAGE}}")
+                        ) {
+                            console.log(
+                                "[extract_image_regions] Detected placeholder, looking for uploaded image in message context...",
+                            )
+
+                            // Extract first image from last user message
+                            if (fileParts && fileParts.length > 0) {
+                                actualImageUrl = fileParts[0].url
+                                console.log(
+                                    `[extract_image_regions] Replaced placeholder with uploaded image (data URL length: ${actualImageUrl.length})`,
+                                )
+                            } else {
+                                return `Error: You used the {{UPLOADED_IMAGE}} placeholder, but no image was found in the message context. Please ask the user to paste an image into the input box.`
+                            }
+                        }
+
+                        // Call the extract-regions API
+                        const baseUrl =
+                            process.env.VERCEL_URL ||
+                            process.env.NEXT_PUBLIC_BASE_URL ||
+                            "http://localhost:6002"
+                        const response = await fetch(
+                            `${baseUrl}/api/extract-regions`,
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                    imageUrl: actualImageUrl,
+                                    regions,
+                                }),
+                            },
+                        )
+
+                        if (!response.ok) {
+                            const error = await response.json()
+                            const errorMsg = error.error || "Unknown error"
+                            const suggestion =
+                                error.suggestion || error.details || ""
+
+                            console.error(
+                                "[extract_image_regions] API error:",
+                                errorMsg,
+                                suggestion,
+                            )
+
+                            return `Error extracting regions: ${errorMsg}
+
+${suggestion}
+
+IMPORTANT: Make sure you're using the image URL from the user's uploaded file in THIS conversation.
+- Look for image attachments in the current message
+- Use data URLs (data:image/...) from uploaded files
+- DO NOT use external web URLs (http://.../image.jpg)
+
+If you cannot find the uploaded image URL, ask the user to upload the image via the paperclip icon.`
+                        }
+
+                        const result = await response.json()
+
+                        if (!result.success || !result.regions) {
+                            console.error(
+                                "[extract_image_regions] API returned error:",
+                                result,
+                            )
+                            return "Failed to extract image regions. Please check the image URL and region coordinates."
+                        }
+
+                        console.log(
+                            "[extract_image_regions] Successfully extracted",
+                            result.regions.length,
+                            "regions",
+                        )
+
+                        // Build dimension info message
+                        const dimensionInfo = result.imageDimensions
+                            ? `📐 Image dimensions: ${result.imageDimensions.width} × ${result.imageDimensions.height} pixels\n\n`
+                            : ""
+
+                        // Build adjustment warnings if any
+                        const adjustmentInfo =
+                            result.adjustmentWarnings &&
+                            result.adjustmentWarnings.length > 0
+                                ? `⚠️ COORDINATE ADJUSTMENTS DETECTED:\nSome regions were outside image boundaries and were automatically adjusted:\n${result.adjustmentWarnings.map((w: string) => `  • ${w}`).join("\n")}\n\n❗ To avoid this in future extractions:\n1. Ensure all coordinates stay within 0 to ${result.imageDimensions?.width || "image_width"} (x-axis) and 0 to ${result.imageDimensions?.height || "image_height"} (y-axis)\n2. Calculate: x + width ≤ image_width, y + height ≤ image_height\n3. Add padding around elements but stay within bounds\n\n`
+                                : ""
+
+                        // Store extracted regions in global cache for later use
+                        const cacheKey = `extract_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
+                        if (!global.extractedRegionsCache) {
+                            global.extractedRegionsCache = new Map()
+                        }
+
+                        const regionMapping: Record<string, string> = {}
+                        result.regions
+                            .filter((r: any) => !r.error)
+                            .forEach((r: any) => {
+                                regionMapping[r.name] = r.dataUrl
+                            })
+
+                        global.extractedRegionsCache.set(
+                            cacheKey,
+                            regionMapping,
+                        )
+
+                        // Auto-cleanup after 10 minutes
+                        setTimeout(
+                            () => {
+                                global.extractedRegionsCache?.delete(cacheKey)
+                            },
+                            10 * 60 * 1000,
+                        )
+
+                        // Build concise summary for AI response (NO base64 to avoid token explosion!)
+                        const successCount = result.regions.filter(
+                            (r: any) => !r.error,
+                        ).length
+                        const errorCount = result.regions.length - successCount
+
+                        const regionsList = result.regions
+                            .map((r: any) => {
+                                if (r.error) {
+                                    return `  ❌ ${r.name}: ${r.error}`
+                                }
+                                return `  ✅ ${r.name}: ${r.dimensions.width}×${r.dimensions.height}px (cached: ${cacheKey})`
+                            })
+                            .join("\n")
+
+                        // Generate XML elements with CACHE REFERENCES (not actual data!)
+                        // Format: image=data:cache/CACHE_KEY/REGION_NAME
+                        // Client will intercept and replace with actual base64
+                        const xmlElements = result.regions
+                            .filter((r: any) => !r.error)
+                            .map((r: any) => {
+                                // Use special cache URL format that client can detect and replace
+                                return `<mxCell id="${r.name}" value="" style="shape=image;verticalLabelPosition=bottom;verticalAlign=top;imageAspect=0;aspect=fixed;image=data:cache/${cacheKey}/${r.name};" vertex="1" parent="1"><mxGeometry x="X" y="Y" width="${r.dimensions.width}" height="${r.dimensions.height}" as="geometry"/></mxCell>`
+                            })
+                            .join("\n\n")
+
+                        // ULTRA-COMPACT response to save tokens (~10K → ~2K tokens)
+                        // Critical: Token budget is tight with 200K Claude limit
+                        const regionsQuickList = result.regions
+                            .filter((r: any) => !r.error)
+                            .map(
+                                (r: any) =>
+                                    `${r.name}:${r.dimensions.width}x${r.dimensions.height}`,
+                            )
+                            .join(", ")
+
+                        return `${dimensionInfo}${adjustmentInfo}✅ ${successCount}/${result.regions.length} regions (Cache:${cacheKey})
+
+${regionsQuickList}
+
+🎯 In display_diagram, use this XML format for EACH region:
+<mxCell id="REGION_NAME" style="shape=image;image=data:cache/${cacheKey}/REGION_NAME;" vertex="1" parent="1">
+  <mxGeometry x="X" y="Y" width="W" height="H" as="geometry"/>
+</mxCell>
+
+Names: ${result.regions
+                            .filter((r: any) => !r.error)
+                            .map((r: any) => r.name)
+                            .join(", ")}
+⚠️ MUST include all ${successCount} image cells in diagram!`
+                    } catch (error) {
+                        console.error("[extract_image_regions] Error:", error)
+                        return `Failed to extract regions: ${error}`
                     }
                 },
             },
